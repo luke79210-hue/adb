@@ -1,8 +1,8 @@
 {
-  "version": "1.0.4",
+  "version": "1.0.5",
   "requestedDate": "2026-10-28",
-  "sourceCommit": "9f48a28c89d1c5ab98591d325b5a7dc917ff7c93",
+  "sourceCommit": "787b2d5b3d3a84bfc1e349b860f7c911935048b0",
   "artifactDirectory": "web",
   "localServiceRequired": true,
-  "reason": "Version the script URL so browsers load the exclusive device selection update"
+  "reason": "Add explicit multiple-device screen selection mode while keeping default single selection"
 }

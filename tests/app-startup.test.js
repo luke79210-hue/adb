@@ -5,14 +5,14 @@ const vm=require('node:vm');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../web/app.js'),'utf8');
 
 async function harness({hosted=false,clipboard,legacyCopy,eventsFail=false,storedToken='',stateError=null,stateHang=false}={}){
- const elements=new Map();const calls=[];const timeouts=[];const timers=[];
+ const elements=new Map();const calls=[];const timeouts=[];const timers=[];const listeners={};
  const element=selector=>{
   if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',value:'',type:'password',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},focus(){this.focused=true;},select(){this.selected=true;},setSelectionRange(start,end){this.selection=[start,end];}});
   return elements.get(selector);
  };
  const map=new Map(storedToken?[['ultron-token',storedToken]]:[]);
  const storage={getItem:key=>map.get(key)||null,setItem:(key,value)=>map.set(key,value)};
- const document={querySelector:element,querySelectorAll:()=>[],addEventListener(){},documentElement:{dataset:{}},execCommand:legacyCopy};
+ const document={querySelector:element,querySelectorAll:()=>[],addEventListener(type,listener){listeners[type]=listener;},documentElement:{dataset:{}},execCommand:legacyCopy};
  const context=vm.createContext({document,navigator:{clipboard},location:{origin:hosted?'https://luke79210-hue.github.io':'http://127.0.0.1:8765',hostname:hosted?'luke79210-hue.github.io':'127.0.0.1',hash:''},window:{addEventListener(){}},sessionStorage:storage,localStorage:{getItem:()=>null,setItem(){}},matchMedia:()=>({matches:false}),setInterval(){},setTimeout(fn,ms){timeouts.push(ms);timers.push(fn);return timeouts.length;},clearTimeout(){},AbortSignal,AbortController,URL,Blob,console,
   fetch:async url=>{
    calls.push(url);
@@ -25,8 +25,26 @@ async function harness({hosted=false,clipboard,legacyCopy,eventsFail=false,store
   }});
  vm.runInContext(source,context);
  await new Promise(resolve=>setImmediate(resolve));
- return {context,elements,element,calls,timeouts,timers};
+ return {context,elements,element,calls,timeouts,timers,listeners};
 }
+
+test('裝置預設單選，明確開啟多台螢幕選擇後可多選，關閉時恢復單選',async()=>{
+ const app=await harness();
+ vm.runInContext('render=()=>{}; selected=new Set(["first"]);',app.context);
+ const click=id=>app.listeners.click({target:{closest:()=>({dataset:{chip:id}})}});
+ const selected=()=>Array.from(vm.runInContext('[...selected]',app.context));
+ await click('second');assert.deepEqual(selected(),['second']);
+ await click('second');assert.deepEqual(selected(),['second']);
+ vm.runInContext('handlers["multi-device-select"]()',app.context);
+ assert.equal(vm.runInContext('multiScreen',app.context),true);
+ await click('third');assert.deepEqual(selected(),['second','third']);
+ await click('second');assert.deepEqual(selected(),['third']);
+ await click('first');
+ vm.runInContext('handlers["multi-device-select"]()',app.context);
+ assert.deepEqual(selected(),['third']);
+ assert.equal(vm.runInContext('multiScreen',app.context),false);
+ await click('first');assert.deepEqual(selected(),['first']);
+});
 
 test('本機啟動完整載入 session、裝置與活動，不能再因缺少 loadEvents 退回錯誤頁',async()=>{
  const app=await harness();
