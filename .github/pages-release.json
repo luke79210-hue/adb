@@ -1,8 +1,8 @@
 {
   "version": "1.0.4",
   "requestedDate": "2026-10-28",
-  "sourceCommit": "c4b69bfdd27f23b6e75e69f8a39f36dda4da1686",
+  "sourceCommit": "9f48a28c89d1c5ab98591d325b5a7dc917ff7c93",
   "artifactDirectory": "web",
   "localServiceRequired": true,
-  "reason": "Single device selection in console; retain tested local ADB discovery and key latency fixes"
+  "reason": "Version the script URL so browsers load the exclusive device selection update"
 }
