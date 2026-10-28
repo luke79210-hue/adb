@@ -1,8 +1,8 @@
 {
-  "version": "1.0.3",
+  "version": "1.0.4",
   "requestedDate": "2026-10-28",
-  "sourceCommit": "15f50aedd9be2cb4ffdcc5567971fd96e0bde1e6",
+  "sourceCommit": "c4b69bfdd27f23b6e75e69f8a39f36dda4da1686",
   "artifactDirectory": "web",
   "localServiceRequired": true,
-  "reason": "Preserve pairing token on connection failure and reject empty retries"
+  "reason": "Single device selection in console; retain tested local ADB discovery and key latency fixes"
 }

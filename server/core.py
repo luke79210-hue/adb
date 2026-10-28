@@ -147,6 +147,7 @@ class Service:
             raise Problem('ULTRON_PACKAGE 格式無效')
         self.token = secrets.token_urlsafe(32)
         self.guard = threading.RLock()
+        self.refresh_locks = {}
         self.processes = {}
         self.log_processes = set()
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=8)
@@ -239,11 +240,19 @@ class Service:
             self.store.event('discovery','模擬網段搜尋',source=source)
             return list(self.devices.values())
         def probe(ip):
+            # Busy Wi-Fi devices can miss a single short TCP probe.
+            for attempt in range(2):
+                try:
+                    with socket.create_connection((str(ip),5555),timeout=1.2):
+                        pass
+                    break
+                except OSError:
+                    if attempt == 1:
+                        return None
             try:
-                with socket.create_connection((str(ip),5555),timeout=.25):
-                    pass
                 return self.connect(str(ip),source)
-            except (OSError,Problem):
+            except (OSError,Problem) as exc:
+                self.store.event('discovery',f'{ip}:5555 可達，但 ADB 連線失敗：{exc}',str(ip),source)
                 return None
         with concurrent.futures.ThreadPoolExecutor(max_workers=32) as pool:
             found = [d for d in pool.map(probe, subnet.hosts()) if d]
@@ -258,6 +267,10 @@ class Service:
 
     def refresh(self, ident):
         with self.guard:
+            lock = self.refresh_locks.setdefault(ident,threading.RLock())
+        # Slow telemetry must not hold the task/cancellation lock. Otherwise
+        # even a single BACK key waits for unrelated devices' ADB queries.
+        with lock:
             return self._refresh(ident)
 
     def _refresh(self, ident):

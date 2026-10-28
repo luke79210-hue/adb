@@ -53,6 +53,72 @@ class ServiceTests(unittest.TestCase):
         for body in [{'action':'shell','devices':self.ids}, {'action':'key','devices':self.ids,'params':{'key':'home;reboot'}}]:
             with self.assertRaises(Problem): self.s.submit(body,self.source)
 
+    def test_discovery_retries_transient_probe_failure(self):
+        self.s.mode = 'real'
+        from unittest.mock import MagicMock
+        connection = MagicMock()
+        calls = {}
+        def probe(endpoint, timeout):
+            calls[endpoint] = calls.get(endpoint, 0) + 1
+            self.assertGreaterEqual(timeout, 1)
+            if calls[endpoint] == 1:
+                raise TimeoutError('temporary Wi-Fi delay')
+            return connection
+        with patch('server.core.socket.create_connection',side_effect=probe), patch.object(self.s,'connect',side_effect=lambda ip,source: {'id':ip}):
+            found = self.s.discover('192.168.1.164/30',self.source)
+        self.assertEqual({d['id'] for d in found},{'192.168.1.165','192.168.1.166'})
+
+    def test_discovery_records_reachable_device_connection_failure(self):
+        self.s.mode = 'real'
+        from unittest.mock import MagicMock
+        with patch('server.core.socket.create_connection',return_value=MagicMock()), patch.object(self.s,'connect',side_effect=Problem('設備未授權')):
+            self.assertEqual(self.s.discover('192.168.1.164/32',self.source),[])
+        self.assertTrue(any('可達，但 ADB 連線失敗' in str(e) and '設備未授權' in str(e) for e in self.s.store.events()))
+
+    def test_back_key_executes_while_telemetry_is_blocked(self):
+        self.s.mode = 'real'
+        entered,release,submitted,sent = (threading.Event() for _ in range(4))
+        result = []
+        def slow_refresh(ident):
+            entered.set()
+            release.wait(3)
+        def adb(serial,args,*a,**kw):
+            self.assertEqual(args,['shell','input','keyevent','4'])
+            # Exercise the same lock used for process registration/cancellation.
+            with self.s.guard:
+                sent.set()
+            return ''
+        def submit():
+            result.extend(self.s.submit({'action':'key','devices':[self.ids[0]],'params':{'key':'back'}},self.source))
+            submitted.set()
+        with patch.object(self.s,'_refresh',side_effect=slow_refresh), patch.object(self.s,'run_adb',side_effect=adb):
+            monitor=threading.Thread(target=self.s.refresh,args=(self.ids[0],))
+            monitor.start()
+            self.assertTrue(entered.wait(1))
+            sender=threading.Thread(target=submit)
+            sender.start()
+            try:
+                self.assertTrue(submitted.wait(1),'背景監控阻擋按鍵提交')
+                self.assertTrue(sent.wait(1),'背景監控阻擋返回鍵執行')
+            finally:
+                release.set(); monitor.join(); sender.join()
+            self.wait(result)
+        self.assertEqual(result[0]['status'],'succeeded')
+
+    def test_same_device_telemetry_remains_serialized(self):
+        active=0
+        maximum=0
+        def refresh(ident):
+            nonlocal active,maximum
+            active+=1; maximum=max(maximum,active)
+            time.sleep(.03)
+            active-=1
+        with patch.object(self.s,'_refresh',side_effect=refresh):
+            threads=[threading.Thread(target=self.s.refresh,args=(self.ids[0],)) for _ in range(3)]
+            for thread in threads: thread.start()
+            for thread in threads: thread.join()
+        self.assertEqual(maximum,1)
+
     def test_all_devices_execute_and_conflicts_require_manual_action(self):
         tasks = self.s.submit({'action':'key','devices':self.ids,'params':{'key':'home'}},self.source)
         self.assertEqual(len(tasks),3)
