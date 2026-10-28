@@ -14,25 +14,11 @@ case "$COMMAND" in
       print -u2 '模式必須為 mock 或 real'; exit 1
     fi
     PYTHON_BIN="$(command -v python3)"
-    mkdir -p "$HOME/Library/LaunchAgents" "$PROJECT_DIR/.runtime"
-    "$PYTHON_BIN" - "$PROJECT_DIR" "$PLIST" "$PYTHON_BIN" "$MODE" <<'PY'
-import plistlib, sys
-from pathlib import Path
-root, target, python, mode = sys.argv[1:]
-config = {
- 'Label':'com.ultron.adb-qa',
- 'ProgramArguments':['/bin/zsh', root+'/scripts/run-service.sh', python, mode],
- 'WorkingDirectory':root, 'RunAtLoad':True, 'KeepAlive':True,
- 'ThrottleInterval':10,
- 'EnvironmentVariables':{'PATH':str(Path(python).parent)+':/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'},
- 'StandardOutPath':root+'/.runtime/service.log',
- 'StandardErrorPath':root+'/.runtime/service-error.log'
-}
-with open(target,'wb') as stream: plistlib.dump(config,stream)
-PY
     launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+    "$PYTHON_BIN" "$PROJECT_DIR/scripts/install_service.py" "$PROJECT_DIR" "$HOME/Library/Application Support/Ultron ADB QA" "$PYTHON_BIN" "$MODE" "$PLIST"
     launchctl bootstrap "$DOMAIN" "$PLIST"
-    print "已安裝登入啟動服務（$MODE）；http://127.0.0.1:8765"
+    launchctl kickstart "$DOMAIN/$LABEL"
+    print "已安裝並要求啟動服務（$MODE）；http://127.0.0.1:8765"
     ;;
   start) launchctl bootstrap "$DOMAIN" "$PLIST" ;;
   stop) launchctl bootout "$DOMAIN/$LABEL" ;;

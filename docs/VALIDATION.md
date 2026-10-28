@@ -88,3 +88,10 @@ zsh -n scripts/run-service.sh scripts/service.sh
 - 確認 Pages 來源可用正確 token 讀取狀態、無 token 回應 401、無法跨來源取得 `/api/session`，以及 preflight 正確。
 - 靜態發布檢查通過：僅 6 個前端檔案，未包含 SQLite、APK、媒體、認證及本機環境檔。
 - 此段紀錄代表上線前驗證；實際發布須另以 GitHub deployment 成功及正式 URL 回應確認。
+
+
+### Mac 常駐安裝修正
+
+實際安裝時發現 launchd 無法開啟 Documents 內的啟動腳本；已改為安裝副本至 `~/Library/Application Support/Ultron ADB QA/app/`，資料位於同層 `data/`，不更改 macOS 安全設定。安裝測試確認 SQLite WAL 交易可正確遷移、重新安裝保留原資料、設定檔權限為 0600。
+
+已實際確認 Python 服務監聽 127.0.0.1:8765；以正式 Pages origin 和記憶體內權杖呼叫 API 成功，CORS 回應正確。當前模式為 mock、3 台模擬裝置、ADB 尚未安裝。LaunchAgent 由 launchd 維持，不依賴本次聊天程序。

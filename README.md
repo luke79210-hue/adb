@@ -101,7 +101,7 @@ scripts/service.sh start
 scripts/service.sh uninstall    # 停止並改名 plist，保留資料
 ```
 
-登入啟動讀取 `.env`；固定使用安裝時的 Python 絕對路徑。日志位於 `.runtime/service.log` 與 `service-error.log`。安裝後變更 `.env` 需 restart；環境換機或專案搬移需重新安裝 plist。停止後不會因 KeepAlive 自動重啟，因為 stop 使用 bootout；start 會重新 bootstrap。
+登入啟動讀取 `.env`；固定使用安裝時的 Python 絕對路徑。登入服務安裝於 `~/Library/Application Support/Ultron ADB QA/app/`，SQLite、媒體與日誌位於同層 `data/`；首次安裝會遷移專案的 `.runtime/`。變更專案程式或 `.env` 後需重新執行 install，更新服務副本；資料會保留。環境換機或 Python 路徑變動需重新安裝 plist。停止後不會因 KeepAlive 自動重啟，因為 stop 使用 bootout；start 會重新 bootstrap。
 
 ## 安全界線
 

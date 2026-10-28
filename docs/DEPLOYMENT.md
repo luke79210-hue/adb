@@ -29,6 +29,8 @@ scripts/service.sh install mock
 scripts/service.sh status
 ```
 
+登入服務會安裝於 `~/Library/Application Support/Ultron ADB QA/app/`，資料與日誌保存在同層 `data/`。首次安裝會用 SQLite backup API 遷移專案內的資料庫（包含尚在 WAL 的交易）與媒體；後續重新安裝只更新程式與設定，保留資料。這避免 launchd 直接讀取 Documents 保護目錄。修改專案的 `.env` 或程式後，重新執行 `scripts/service.sh install mock` 更新安裝副本。
+
 真實模式則需先安裝 Google 官方 Android platform-tools、設定 `ADB_PATH` 與真正的 `ULTRON_PACKAGE`，將 mock 改成 real。缺少設備、ADB 或公司 APP 套件設定時，不能將模擬展示視為真實設備已可操作。
 
 ## 網站配對
