@@ -1,0 +1,51 @@
+name: Publish Ultron QA to GitHub Pages
+
+# Only a deliberate release-request change or manual dispatch publishes the website.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/pages-release.json']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate release files
+        run: python3 scripts/check_release.py
+      - name: Backend tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Frontend checks and tests
+        run: |
+          node --check web/app.js
+          node --check web/time-picker.js
+          node --check web/screenshots.js
+          node --test tests/*.test.js
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: web
+      - name: Deploy static frontend
+        id: deployment
+        uses: actions/deploy-pages@v4
