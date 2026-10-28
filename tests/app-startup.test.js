@@ -100,3 +100,11 @@ test('即使瀏覽器 fetch 忽略 AbortSignal 且不回應，獨立逾時計時
  assert.match(app.element('#main').innerHTML,/連線逾時/);
  assert.deepEqual(app.calls.map(url=>new URL(url).pathname),['/api/state']);
 });
+
+test('連線失敗時保留已貼上的權杖，空值重試不得清除原 session',async()=>{
+ const app=await harness({hosted:true,storedToken:'fixture-paired-token',stateError:new TypeError('Failed to fetch')});
+ assert.match(app.element('#main').innerHTML,/value="fixture-paired-token"/);
+ await assert.rejects(()=>vm.runInContext("pair('http://127.0.0.1:8765','')",app.context),/請先貼上/);
+ assert.equal(vm.runInContext('token',app.context),'fixture-paired-token');
+ assert.deepEqual(app.calls.map(url=>new URL(url).pathname),['/api/state']);
+});

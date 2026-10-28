@@ -1,8 +1,8 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "requestedDate": "2026-10-28",
   "sourceCommit": "15f50aedd9be2cb4ffdcc5567971fd96e0bde1e6",
   "artifactDirectory": "web",
   "localServiceRequired": true,
-  "reason": "Bound pairing wait and show local-network connection failures"
+  "reason": "Preserve pairing token on connection failure and reject empty retries"
 }
