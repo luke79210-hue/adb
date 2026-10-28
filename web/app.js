@@ -98,6 +98,7 @@ function renderOffline(message){
  $('#main').innerHTML=`<div class="connection-error"><span class="pill ${hosted?'neutral':'bad'}">${hosted?'需要配對 Mac 本機服務':'本機服務未連線'}</span><h1 style="margin-top:20px">${hosted?'連接這台 Mac 的 QA 工作空間':'連接您的 QA 工作空間'}</h1><p>本機服務負責執行 ADB 與保存紀錄。請先啟動服務；模擬模式會清楚標示，真實設備操作需使用 real 模式並安裝 ADB。</p><div class="panel panel-body"><code>scripts/run-service.sh python3 mock</code></div>${pairing}<p>${esc(message)}</p><label class="field">本機 API 位址<input id="offline-api" value="${esc(apiBase)}"></label><label class="field">配對權杖（只保存在這個分頁）<input id="offline-token" type="password" autocomplete="off"></label><button class="primary" data-action="pair-offline">${hosted?'配對並連線':'重新連線'}</button></div>`;
 }
 
+async function loadEvents(){try{events=await api('/api/events');}catch{}}
 async function bootstrap(){try{if(location.origin!==apiBase&&!token){online=false;renderOffline('請從本機服務取得權杖後配對；網站不會公開設備控制權。');return;}if(location.origin===apiBase){const r=await fetch(apiBase+'/api/session');if(!r.ok)throw new Error('無法取得本機 session');token=(await r.json()).token;sessionStorage.setItem('ultron-token',token);}await refreshState(true);await loadEvents();if(online)render();}catch(e){renderOffline(e.message);}}
 async function runJob(action,params={},ids=[...selected]){
  if(!online)throw new Error('本機服務已斷線，禁止操作');
@@ -180,8 +181,34 @@ async function saveScreenshotToFile(url){
 
 async function history(){await loadEvents();showDialog('操作、異常與稽核紀錄',`<div class="actions" style="margin-bottom:18px"><button data-action="export-csv">匯出 CSV</button><small>最多顯示最近 2,000 筆 · 時間為本機顯示</small></div>${events.map(e=>`<div class="event-line"><span class="event-dot ${e.kind.includes('fail')||e.kind==='alert'?'bad':''}"></span><div><strong>${esc(eventLabel(e.kind))}</strong><small class="sub">${esc(fmtTime(e.at))} · ${esc(e.device)} · IP ${esc(e.ip)} · Session ${esc(e.session)}</small><p class="mono" style="white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px">${esc(e.detail)}</p></div></div>`).join('')||empty('尚無紀錄')}`);}
 async function settings(){let diag;try{diag=await api('/api/diagnostics');}catch(e){diag={error:e.message};}
- const result=await showDialog('本機服務設定與系統診斷',`<label class="field">API 位址（僅接受本機 HTTP）<input id="settings-api" value="${esc(apiBase)}"></label><label class="field">本機配對權杖<input type="password" id="settings-token" value="${esc(token)}" autocomplete="off"></label><div class="actions" style="margin-bottom:20px"><button data-action="copy-token">複製權杖</button><button data-action="backup">手動備份 SQLite</button><button data-action="restore-select" class="danger">還原資料庫</button><input type="file" id="restore-file" accept=".sqlite3,.db" hidden></div><p>備份僅包含 SQLite；APK 與錄影位於 .runtime/apks、.runtime/media，請另外保存。管理 Mac 登入自動啟動及停止，請使用 scripts/service.sh。</p><pre>${esc(JSON.stringify(diag,null,2))}</pre>`,[{text:'關閉',value:'cancel'},{text:'儲存並連線',value:'save',class:'primary'}]);
+ const result=await showDialog('本機服務設定與系統診斷',`<label class="field">API 位址（僅接受本機 HTTP）<input id="settings-api" value="${esc(apiBase)}"></label><label class="field">本機配對權杖<input type="password" id="settings-token" value="${esc(token)}" autocomplete="off"></label><p id="token-copy-status" class="hint" role="status" aria-live="polite">若自動複製失敗，可顯示權杖並按 ⌘C 手動複製；不要將權杖貼到聊天或 GitHub。</p><div class="actions" style="margin-bottom:20px"><button data-action="copy-token">複製權杖</button><button data-action="toggle-token">顯示權杖</button><button data-action="backup">手動備份 SQLite</button><button data-action="restore-select" class="danger">還原資料庫</button><input type="file" id="restore-file" accept=".sqlite3,.db" hidden></div><p>備份僅包含 SQLite；APK 與錄影位於 .runtime/apks、.runtime/media，請另外保存。管理 Mac 登入自動啟動及停止，請使用 scripts/service.sh。</p><pre>${esc(JSON.stringify(diag,null,2))}</pre>`,[{text:'關閉',value:'cancel'},{text:'儲存並連線',value:'save',class:'primary'}]);
  if(result==='save')await pair($('#settings-api').value,$('#settings-token').value);
+}
+async function copyPairingToken(){
+ const field=$('#settings-token');
+ const value=(field?field.value:token).trim();
+ if(!value)throw new Error('尚未取得本機權杖，請重新整理本機頁面後再試');
+ const status=$('#token-copy-status');
+ try{
+  if(!navigator.clipboard?.writeText)throw new Error('Clipboard API unavailable');
+  await navigator.clipboard.writeText(value);
+  if(status)status.textContent='已複製權杖，請貼到正式網站的配對欄位。';
+  toast('配對權杖已複製');return;
+ }catch{}
+ if(!field)throw new Error('請在服務設定中手動複製權杖');
+ const originalType=field.type;
+ field.type='text';field.value=value;field.focus();field.select();field.setSelectionRange(0,value.length);
+ let copied=false;
+ try{copied=document.execCommand?.('copy')===true;}catch{}
+ if(copied){
+  field.type=originalType;
+  if(status)status.textContent='已透過備援方式複製權杖。';
+  toast('配對權杖已複製');
+ }else{
+  const toggle=$('[data-action="toggle-token"]');if(toggle)toggle.textContent='隱藏權杖';
+  if(status)status.textContent='瀏覽器未允許自動複製。權杖已顯示並選取，請按 ⌘C（Windows：Ctrl+C）手動複製。';
+  toast('請在已選取的權杖欄位按 ⌘C 手動複製');
+ }
 }
 async function pair(base,value){const u=new URL(base);if(u.protocol!=='http:'||!['127.0.0.1','localhost'].includes(u.hostname)||u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw new Error('僅允許 http://127.0.0.1:埠號 或 localhost 本機 API');apiBase=u.origin;token=value.trim();localStorage.setItem('ultron-api',apiBase);sessionStorage.setItem('ultron-token',token);await bootstrap();}
 async function install(id){const apk=state.apks.find(a=>a.id===id);const r=await showDialog('選擇 APK 安裝設備',`<p><strong>${esc(apk.filename)}</strong><br>${esc(apk.package)} · Code ${esc(apk.versionCode)}</p><div>${state.devices.map(d=>`<label class="check-row"><input type="checkbox" data-install-device="${esc(d.id)}" ${selected.has(d.id)?'checked':''} ${connected(d)?'':'disabled'}>${esc(d.name)} · ${esc(d.id)} · 目前 Code ${esc(d.versionCode)}</label>`).join('')}</div><label class="check-row"><input id="allow-downgrade" type="checkbox">明確允許手動降版／版本回復（可能失敗或遺失資料）</label><p>不會自動降版。已安裝的舊版 APK 會先備份，APP 私有資料不包含在內。</p>`,[{text:'取消',value:'cancel'},{text:'檢查安裝條件',value:'install',class:'primary'}]);if(r==='install'){const ids=$$('[data-install-device]:checked').map(el=>el.dataset.installDevice);const allow=$('#allow-downgrade').checked;await runJob('install',{apk:id,allowDowngrade:allow},ids);}}
@@ -208,7 +235,8 @@ const handlers={
  'backup':()=>download('/api/backup','ultron-backup.sqlite3'),
  'export-csv':()=>download('/api/export','ultron-events.csv'),
  'restore-select':()=>$('#restore-file').click(),
- 'copy-token':async()=>{await navigator.clipboard.writeText(token);toast('配對權杖已複製；請只提供給您信任的前端');},
+ 'copy-token':copyPairingToken,
+ 'toggle-token':()=>{const field=$('#settings-token');field.type=field.type==='password'?'text':'password';$('[data-action="toggle-token"]').textContent=field.type==='text'?'隱藏權杖':'顯示權杖';},
  'pair-offline':()=>pair($('#offline-api').value,$('#offline-token').value)
 };
 document.addEventListener('click',async e=>{const button=e.target.closest('button');if(!button)return;try{

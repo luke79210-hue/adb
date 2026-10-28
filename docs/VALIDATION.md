@@ -95,3 +95,10 @@ zsh -n scripts/run-service.sh scripts/service.sh
 實際安裝時發現 launchd 無法開啟 Documents 內的啟動腳本；已改為安裝副本至 `~/Library/Application Support/Ultron ADB QA/app/`，資料位於同層 `data/`，不更改 macOS 安全設定。安裝測試確認 SQLite WAL 交易可正確遷移、重新安裝保留原資料、設定檔權限為 0600。
 
 已實際確認 Python 服務監聽 127.0.0.1:8765；以正式 Pages origin 和記憶體內權杖呼叫 API 成功，CORS 回應正確。當前模式為 mock、3 台模擬裝置、ADB 尚未安裝。LaunchAgent 由 launchd 維持，不依賴本次聊天程序。
+
+
+### 配對與剪貼簿修正（2026-10-28）
+
+修復上線後初始化遺漏 `loadEvents` 導致連線成功仍顯示錯誤頁的問題。新增本機啟動、已配對正式網站啟動、歷史 API 失敗不影響連線，以及權杖複製／備援／手動選取／空值拒絕測試。18 項 Node 測試通過。
+
+本機常駐版只更新前端，未重啟服務，保留既有 session 權杖。實際瀏覽器已確認本機頁面正常顯示三台模擬裝置，複製權杖回應成功；不輸出或記錄權杖明文。
