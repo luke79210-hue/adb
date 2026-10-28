@@ -1,8 +1,8 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "requestedDate": "2026-10-28",
   "sourceCommit": "15f50aedd9be2cb4ffdcc5567971fd96e0bde1e6",
   "artifactDirectory": "web",
   "localServiceRequired": true,
-  "reason": "Fix pairing startup and clipboard fallback"
+  "reason": "Bound pairing wait and show local-network connection failures"
 }

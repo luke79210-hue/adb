@@ -4,8 +4,8 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../web/app.js'),'utf8');
 
-async function harness({hosted=false,clipboard,legacyCopy,eventsFail=false,storedToken=''}={}){
- const elements=new Map();const calls=[];
+async function harness({hosted=false,clipboard,legacyCopy,eventsFail=false,storedToken='',stateError=null,stateHang=false}={}){
+ const elements=new Map();const calls=[];const timeouts=[];const timers=[];
  const element=selector=>{
   if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',value:'',type:'password',open:false,dataset:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},focus(){this.focused=true;},select(){this.selected=true;},setSelectionRange(start,end){this.selection=[start,end];}});
   return elements.get(selector);
@@ -13,17 +13,19 @@ async function harness({hosted=false,clipboard,legacyCopy,eventsFail=false,store
  const map=new Map(storedToken?[['ultron-token',storedToken]]:[]);
  const storage={getItem:key=>map.get(key)||null,setItem:(key,value)=>map.set(key,value)};
  const document={querySelector:element,querySelectorAll:()=>[],addEventListener(){},documentElement:{dataset:{}},execCommand:legacyCopy};
- const context=vm.createContext({document,navigator:{clipboard},location:{origin:hosted?'https://luke79210-hue.github.io':'http://127.0.0.1:8765',hostname:hosted?'luke79210-hue.github.io':'127.0.0.1',hash:''},window:{addEventListener(){}},sessionStorage:storage,localStorage:{getItem:()=>null,setItem(){}},matchMedia:()=>({matches:false}),setInterval(){},setTimeout(){},clearTimeout(){},AbortSignal,URL,Blob,console,
+ const context=vm.createContext({document,navigator:{clipboard},location:{origin:hosted?'https://luke79210-hue.github.io':'http://127.0.0.1:8765',hostname:hosted?'luke79210-hue.github.io':'127.0.0.1',hash:''},window:{addEventListener(){}},sessionStorage:storage,localStorage:{getItem:()=>null,setItem(){}},matchMedia:()=>({matches:false}),setInterval(){},setTimeout(fn,ms){timeouts.push(ms);timers.push(fn);return timeouts.length;},clearTimeout(){},AbortSignal,AbortController,URL,Blob,console,
   fetch:async url=>{
    calls.push(url);
    if(url.endsWith('/api/session'))return {ok:true,json:async()=>({token:'fixture-session-token'})};
+   if(url.endsWith('/api/state')&&stateHang)return new Promise(()=>{});
+   if(url.endsWith('/api/state')&&stateError)throw stateError;
    if(url.endsWith('/api/state'))return {ok:true,json:async()=>({mode:'mock',devices:[],tasks:[],apks:[],package:'com.ultron.app'})};
    if(url.endsWith('/api/events'))return {ok:!eventsFail,status:503,json:async()=>eventsFail?{error:'history unavailable'}:[]};
    throw new Error('Unexpected URL '+url);
   }});
  vm.runInContext(source,context);
  await new Promise(resolve=>setImmediate(resolve));
- return {context,elements,element,calls};
+ return {context,elements,element,calls,timeouts,timers};
 }
 
 test('本機啟動完整載入 session、裝置與活動，不能再因缺少 loadEvents 退回錯誤頁',async()=>{
@@ -73,4 +75,28 @@ test('空權杖不可覆寫剪貼簿或顯示成功',async()=>{
  app.element('#settings-token').value='';
  await assert.rejects(()=>vm.runInContext('copyPairingToken()',app.context),/尚未取得/);
  assert.equal(calls,0);
+});
+
+test('配對檢查最多等待 10 秒，逾時有明確提示且不再請求歷史 API',async()=>{
+ const error=new Error('timeout');error.name='TimeoutError';
+ const app=await harness({hosted:true,storedToken:'fixture-paired-token',stateError:error});
+ assert.deepEqual(app.calls.map(url=>new URL(url).pathname),['/api/state']);
+ assert.equal(app.timeouts[0],10000);
+ assert.match(app.element('#main').innerHTML,/連線逾時/);
+ assert.match(app.element('#main').innerHTML,/已允許此網站存取本機/);
+});
+test('瀏覽器拒絕本機連線時給出錯誤及本機頁面備援，不宣稱配對成功',async()=>{
+ const app=await harness({hosted:true,storedToken:'fixture-paired-token',stateError:new TypeError('Failed to fetch')});
+ assert.match(app.element('#main').innerHTML,/無法連接本機服務/);
+ assert.match(app.element('#main').innerHTML,/http:\/\/127.0.0.1:8765/);
+ assert.doesNotMatch(app.element('#main').innerHTML,/裝置列表/);
+});
+
+test('即使瀏覽器 fetch 忽略 AbortSignal 且不回應，獨立逾時計時仍會結束配對等待',async()=>{
+ const app=await harness({hosted:true,storedToken:'fixture-paired-token',stateHang:true});
+ const timer=app.timers[app.timeouts.indexOf(10000)];
+ assert.equal(typeof timer,'function');timer();
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.match(app.element('#main').innerHTML,/連線逾時/);
+ assert.deepEqual(app.calls.map(url=>new URL(url).pathname),['/api/state']);
 });

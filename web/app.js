@@ -25,7 +25,19 @@ const mockNotice = ()=>isMock()?`<div class="notice"><span>◈</span><strong>模
 function toast(message,error=false){const el=$('#toast');el.textContent=message;el.className='visible'+(error?' error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className='',6500);}
 async function api(path,{method='GET',body,raw,filename,blob=false}={}){
  const headers={'X-Ultron-Token':token};if(body!==undefined)headers['Content-Type']='application/json';if(filename)headers['X-Filename']=encodeURIComponent(filename);
- const response=await fetch(apiBase+path,{method,headers,body:raw??(body===undefined?undefined:JSON.stringify(body)),signal:AbortSignal.timeout(path.includes('/discover')?60000:250000)});
+ const quickRequest=['/api/state','/api/diagnostics','/api/events'].includes(path.split('?')[0]);
+ const timeoutMs=quickRequest?10000:path.includes('/discover')?60000:250000;
+ const controller=new AbortController();let timeoutId;let response;
+ const timeout=new Promise((_,reject)=>{timeoutId=setTimeout(()=>{controller.abort();const error=new Error('request timed out');error.name='TimeoutError';reject(error);},timeoutMs);});
+ try{
+  response=await Promise.race([fetch(apiBase+path,{method,headers,body:raw??(body===undefined?undefined:JSON.stringify(body)),signal:controller.signal}),timeout]);
+ }catch(error){
+  const expired=error.name==='TimeoutError'||error.name==='AbortError';
+  const remote=location.origin!==apiBase;
+  const advice=remote?'請確認已允許此網站存取本機／區域網路。若內建瀏覽器仍無法連線，可先使用 Mac 本機頁面，或在支援本機網路存取的瀏覽器開啟正式網站。':'請確認 Mac 本機服務仍在運行，再按重新連線。';
+  throw new Error((expired?'連線逾時，已停止等待。':'無法連接本機服務。')+advice);
+ }finally{clearTimeout(timeoutId);}
+
  if(!response.ok){let data;try{data=await response.json();}catch{data={error:'HTTP '+response.status};}throw new Error(data.error||'服務回應錯誤');}
  if(blob)return {blob:await response.blob(),disposition:response.headers.get('Content-Disposition')};
  return response.json();
@@ -94,12 +106,13 @@ async function refreshState(full=false){if(stateBusy)return;stateBusy=true;try{
  }catch(e){online=false;$('#service-label').textContent='本機服務未連線';$('#service-dot').classList.add('off');$('#last-update').textContent='服務斷線 · 設備狀態未知';$('#mode-pill').textContent='服務已斷線';$('#mode-pill').className='pill bad';if(!$('#main').innerHTML||!$('#main .connection-error'))renderOffline(e.message);}finally{stateBusy=false;}}
 function renderOffline(message){
  const hosted=location.origin!==apiBase;
+ $('#mode-pill').textContent=hosted?'尚未連線':'本機服務未連線';$('#mode-pill').className='pill warning';
  const pairing=hosted?`<p>這個網站只提供操作介面。請在同一台 Mac 啟動本機服務，再從本機頁面「服務設定與診斷」複製配對權杖。</p><p><a href="http://127.0.0.1:8765/" target="_blank" rel="noopener noreferrer">開啟 Mac 本機頁面 ↗</a></p><p>若瀏覽器詢問此網站存取本機網路的權限，請在確認網址後允許；若瀏覽器不支援這種連線，可直接使用本機頁面。</p>`:'';
  $('#main').innerHTML=`<div class="connection-error"><span class="pill ${hosted?'neutral':'bad'}">${hosted?'需要配對 Mac 本機服務':'本機服務未連線'}</span><h1 style="margin-top:20px">${hosted?'連接這台 Mac 的 QA 工作空間':'連接您的 QA 工作空間'}</h1><p>本機服務負責執行 ADB 與保存紀錄。請先啟動服務；模擬模式會清楚標示，真實設備操作需使用 real 模式並安裝 ADB。</p><div class="panel panel-body"><code>scripts/run-service.sh python3 mock</code></div>${pairing}<p>${esc(message)}</p><label class="field">本機 API 位址<input id="offline-api" value="${esc(apiBase)}"></label><label class="field">配對權杖（只保存在這個分頁）<input id="offline-token" type="password" autocomplete="off"></label><button class="primary" data-action="pair-offline">${hosted?'配對並連線':'重新連線'}</button></div>`;
 }
 
 async function loadEvents(){try{events=await api('/api/events');}catch{}}
-async function bootstrap(){try{if(location.origin!==apiBase&&!token){online=false;renderOffline('請從本機服務取得權杖後配對；網站不會公開設備控制權。');return;}if(location.origin===apiBase){const r=await fetch(apiBase+'/api/session');if(!r.ok)throw new Error('無法取得本機 session');token=(await r.json()).token;sessionStorage.setItem('ultron-token',token);}await refreshState(true);await loadEvents();if(online)render();}catch(e){renderOffline(e.message);}}
+async function bootstrap(){try{if(location.origin!==apiBase&&!token){online=false;renderOffline('請從本機服務取得權杖後配對；網站不會公開設備控制權。');return;}if(location.origin===apiBase){const r=await fetch(apiBase+'/api/session');if(!r.ok)throw new Error('無法取得本機 session');token=(await r.json()).token;sessionStorage.setItem('ultron-token',token);}await refreshState(true);if(!online)return;await loadEvents();render();}catch(e){renderOffline(e.message);}}
 async function runJob(action,params={},ids=[...selected]){
  if(!online)throw new Error('本機服務已斷線，禁止操作');
  if(!ids.length)throw new Error('請至少選取一台設備');
